@@ -3,47 +3,321 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bản Đồ Đặt Xe & Tracking Real-time</title>
+    <title>Hệ Thống Đặt Xe & Định Vị Realtime WebSocket</title>
 
+    <!-- Leaflet CSS & JS -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- SockJS & STOMP Client for WebSocket -->
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <!-- Font Awesome Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
 
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!-- SIDEBAR -->
     <div class="sidebar">
-      <div class="section-box">
-        <h2>🚕 ĐỊNH VỊ GPS TÀI XẾ</h2>
-        <div class="form-group">
-          <label>Tọa độ chọn trên Map:</label>
-          <input
-            type="text"
-            id="selectedCoords"
-            value="21.03780, 105.78390"
-            readonly
-          />
-        </div>
-        <button class="btn btn-location" onclick="sendDriverLocation()">
-          📡 CẬP NHẬT TỌA ĐỘ TÀI XẾ
+      <!-- HEADER CHUYỂN TAB -->
+      <div class="tabs-header">
+        <button
+          class="tab-btn active"
+          id="tabBtnDriver"
+          onclick="switchTab('driver')"
+        >
+          <i class="fa-solid fa-taxi"></i> TÀI XẾ
+        </button>
+        <button
+          class="tab-btn"
+          id="tabBtnCustomer"
+          onclick="switchTab('customer')"
+        >
+          <i class="fa-solid fa-user"></i> ĐẶT XE (KHÁCH)
         </button>
       </div>
 
-      <label>📡 Nhật ký hệ thống (Logs):</label>
-      <div id="logs" class="log-box"></div>
+      <!-- ============================================== -->
+      <!-- TAB 1: GIAO DIỆN TÀI XẾ -->
+      <!-- ============================================== -->
+      <div id="tabDriverContent" class="tab-pane active">
+        <!-- TRẠNG THÁI KẾT NỐI WEBSOCKET -->
+        <div class="ws-status-bar">
+          <span class="ws-dot" id="wsDot"></span>
+          <span id="wsStatusText">WebSocket: Đang kết nối...</span>
+          <span class="badge-driver-id" id="badgeDriverId">ID: #1</span>
+        </div>
+
+        <!-- KHỐI ĐỊNH VỊ GPS -->
+        <div class="section-box">
+          <h2><i class="fa-solid fa-location-crosshairs"></i> VỊ TRÍ TÀI XẾ</h2>
+          <div class="form-group">
+            <label>Tọa độ hiện tại trên Map:</label>
+            <input
+              type="text"
+              id="selectedCoords"
+              value="21.03780, 105.78390"
+              readonly
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Loại xe hoạt động:</label>
+            <select id="vehicleType" onchange="onChangeVehicleType(this.value)">
+              <option value="BIKE">Xe Máy (BIKE)</option>
+              <option value="CAR_4_SEAT">Xe 4 Chỗ (CAR_4_SEAT)</option>
+              <option value="CAR_7_SEAT">Xe 7 Chỗ (CAR_7_SEAT)</option>
+            </select>
+          </div>
+
+          <!-- TOGGLE STREAM WEBSOCKET 1S/LẦN -->
+          <div class="stream-toggle-box">
+            <div class="stream-info">
+              <span class="stream-title">📡 Stream GPS WebSocket (1s/lần)</span>
+              <span class="stream-desc">Chỉ gửi khi tọa độ di chuyển</span>
+            </div>
+            <label class="switch-small">
+              <input
+                type="checkbox"
+                id="wsGpsStreamToggle"
+                checked
+                onchange="onToggleGpsStream(this.checked)"
+              />
+              <span class="slider-small"></span>
+            </label>
+          </div>
+
+          <div class="action-buttons-grid">
+            <button class="btn btn-location" onclick="sendDriverLocation()">
+              <i class="fa-solid fa-paper-plane"></i> Cập nhật REST
+            </button>
+            <button class="btn btn-test-move" onclick="simulateRandomStep()">
+              <i class="fa-solid fa-person-walking"></i> Nhích 1 đoạn (Test)
+            </button>
+          </div>
+        </div>
+
+        <!-- KHỐI CHUYẾN ĐI ĐANG NHẬN CỦA TÀI XẾ -->
+        <div id="driverActiveTripBox" class="section-box active-trip-box" style="display: none">
+          <div class="trip-header-card">
+            <span class="badge-trip" id="driverTripIdBadge">Trip #---</span>
+            <span class="badge-status-trip" id="driverTripStatusBadge">ACCEPTED</span>
+          </div>
+
+          <div class="trip-info-lines">
+            <div class="info-row">
+              <span class="dot green"></span>
+              <span class="label">Đón:</span>
+              <span class="val" id="driverTripPickupText">...</span>
+            </div>
+            <div class="info-row">
+              <span class="dot red"></span>
+              <span class="label">Trả:</span>
+              <span class="val" id="driverTripDropoffText">...</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Cước phí:</span>
+              <span class="val price" id="driverTripFareText">0 VNĐ</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Khoảng cách tới khách:</span>
+              <span class="val highlight" id="driverDistanceToPickupText">-- m</span>
+            </div>
+          </div>
+
+          <div class="simulation-alert" id="driverSimAlert">
+            <i class="fa-solid fa-route fa-beat"></i>
+            <span id="driverSimAlertText">Đang tự động di chuyển đến điểm đón (GPS 1s/lần)...</span>
+          </div>
+
+          <div class="trip-action-buttons">
+            <button
+              class="btn btn-progress-trip"
+              id="btnDriverNextStatus"
+              onclick="advanceTripStatusByDriver()"
+            >
+              <i class="fa-solid fa-flag-checkered"></i> ĐẾN ĐIỂM ĐÓN (ARRIVED)
+            </button>
+            <button class="btn btn-cancel-trip" onclick="cancelTripByDriver()">
+              <i class="fa-solid fa-ban"></i> Hủy chuyến
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- TAB 2: GIAO DIỆN KHÁCH HÀNG (SIMULATION BOOKING) -->
+      <!-- ============================================== -->
+      <div id="tabCustomerContent" class="tab-pane">
+        <div class="section-box">
+          <h2><i class="fa-solid fa-car-side"></i> GIẢ LẬP ĐẶT XE</h2>
+
+          <!-- ĐIỂM ĐÓN -->
+          <div class="form-group">
+            <label>🟢 Điểm đón khách:</label>
+            <div class="preset-group">
+              <button class="btn-preset" onclick="setPickupPreset('keangnam')">
+                Keangnam
+              </button>
+              <button class="btn-preset" onclick="setPickupPreset('mydinh')">
+                BX Mỹ Đình
+              </button>
+              <button class="btn-preset" onclick="setPickupPreset('dhqg')">
+                ĐH Quốc Gia
+              </button>
+            </div>
+            <input
+              type="text"
+              id="custPickupAddress"
+              value="Tòa nhà Keangnam Landmark 72, Hà Nội"
+            />
+            <div class="coord-tag" id="custPickupCoordsTag">
+              📍 21.0173, 105.7838
+            </div>
+          </div>
+
+          <!-- ĐIỂM TRẢ -->
+          <div class="form-group">
+            <label>🔴 Điểm đến (Trả khách):</label>
+            <div class="preset-group">
+              <button class="btn-preset" onclick="setDropoffPreset('hoguom')">
+                Hồ Gươm
+              </button>
+              <button class="btn-preset" onclick="setDropoffPreset('vincom')">
+                Vincom Bà Triệu
+              </button>
+              <button class="btn-preset" onclick="setDropoffPreset('noibai')">
+                Sân bay Nội Bài
+              </button>
+            </div>
+            <input
+              type="text"
+              id="custDropoffAddress"
+              value="Hồ Hoàn Kiếm, Tràng Tiền, Hoàn Kiếm, Hà Nội"
+            />
+            <div class="coord-tag" id="custDropoffCoordsTag">
+              📍 21.0287, 105.8524
+            </div>
+          </div>
+
+          <!-- CHỌN LOẠI PHƯƠNG TIỆN -->
+          <div class="form-group">
+            <label>Phương tiện mong muốn:</label>
+            <div class="vehicle-select-cards">
+              <div
+                class="vehicle-card active"
+                id="cardBike"
+                onclick="selectCustomerVehicle('BIKE', 14000, 5000)"
+              >
+                <i class="fa-solid fa-motorcycle"></i>
+                <div class="name">Xe Máy</div>
+                <div class="rate">~14.000đ/2km</div>
+              </div>
+              <div
+                class="vehicle-card"
+                id="cardCar4"
+                onclick="selectCustomerVehicle('CAR_4_SEAT', 18000, 12000)"
+              >
+                <i class="fa-solid fa-car"></i>
+                <div class="name">4 Chỗ</div>
+                <div class="rate">~18.000đ/2km</div>
+              </div>
+              <div
+                class="vehicle-card"
+                id="cardCar7"
+                onclick="selectCustomerVehicle('CAR_7_SEAT', 22000, 16000)"
+              >
+                <i class="fa-solid fa-van-shuttle"></i>
+                <div class="name">7 Chỗ</div>
+                <div class="rate">~22.000đ/2km</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PHƯƠNG THỨC THANH TOÁN -->
+          <div class="form-group">
+            <label>Phương thức thanh toán:</label>
+            <select id="custPaymentMethod">
+              <option value="CASH">Tiền mặt (CASH)</option>
+              <option value="WALLET">Ví điện tử (WALLET)</option>
+            </select>
+          </div>
+
+          <!-- CƯỚC ƯỚC TÍNH -->
+          <div class="fare-estimate-box">
+            <div class="fare-row">
+              <span>Ước tính khoảng cách:</span>
+              <b id="estDistanceText">~ 7.5 km</b>
+            </div>
+            <div class="fare-row">
+              <span>Tổng cước dự tính:</span>
+              <b class="fare-highlight" id="estFareText">41.500 VNĐ</b>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-book-ride"
+            id="btnBookRide"
+            onclick="createCustomerTrip()"
+          >
+            <i class="fa-solid fa-bolt"></i> 🚖 ĐẶT CHUYẾN ĐI NGAY
+          </button>
+        </div>
+
+        <!-- KHỐI THEO DÕI ĐƠN HÀNG DÀNH CHO KHÁCH -->
+        <div id="custActiveTripBox" class="section-box active-trip-box" style="display: none">
+          <div class="trip-header-card">
+            <span class="badge-trip" id="custTripIdBadge">Trip #---</span>
+            <span class="badge-status-trip" id="custTripStatusBadge">TÌM XE</span>
+          </div>
+
+          <div class="cust-trip-status-message" id="custTripStatusMessage">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Đang phát thông báo tới tài xế rảnh gần nhất trong 5km...</span>
+          </div>
+
+          <div class="trip-info-lines">
+            <div class="info-row">
+              <span class="label">Tài xế tiếp nhận:</span>
+              <span class="val highlight" id="custAssignedDriverText">Chưa có</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Khoảng cách xe tới đón:</span>
+              <span class="val price" id="custDriverDistanceText">-- m</span>
+            </div>
+          </div>
+
+          <button class="btn btn-cancel-trip" onclick="cancelTripByCustomer()">
+            <i class="fa-solid fa-xmark"></i> Hủy chuyến xe
+          </button>
+        </div>
+      </div>
+
+      <!-- NHẬT KÝ HỆ THỐNG CHUNG (LOGS) -->
+      <div class="logs-section">
+        <div class="logs-header">
+          <label><i class="fa-solid fa-terminal"></i> Nhật ký hệ thống:</label>
+          <button class="btn-clear-logs" onclick="clearLogs()">Xóa</button>
+        </div>
+        <div id="logs" class="log-box"></div>
+      </div>
     </div>
 
-    <!-- KHUNG BẢN ĐỒ -->
+    <!-- KHUNG BẢN ĐỒ LEAFLET -->
     <div id="map">
-      <!-- NÚT NGUỒN BẬT TẮT ONLINE ĐẶT BÊN PHẢI BẢN ĐỒ -->
+      <!-- NÚT NGUỒN BẬT TẮT ONLINE ĐẶT GÓC PHẢI BẢN ĐỒ -->
       <div class="driver-status-toggle-wrapper">
-        <span id="statusText" class="status-label-text" style="color: #94a3b8"
-          >🔴 OFFLINE</span
-        >
+        <span id="statusText" class="status-label-text" style="color: #94a3b8">
+          🔴 OFFLINE
+        </span>
         <label class="power-switch">
           <input
             type="checkbox"
@@ -53,41 +327,81 @@
           <span class="slider"></span>
         </label>
       </div>
+
+      <!-- CHỈ BÁO REALTIME TRÊN MAP -->
+      <div class="map-floating-panel" id="mapFloatingPanel">
+        <i class="fa-solid fa-satellite-dish"></i>
+        <span id="mapFloatingText">Đang quét 20km xung quanh...</span>
+      </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MODAL NỔ CUỐC 30S CHO TÀI XẾ (RIDE OFFER POPUP) -->
+    <!-- ============================================== -->
+    <div id="rideOfferModal" class="ride-offer-overlay" style="display: none">
+      <div class="ride-offer-card">
+        <div class="offer-top-bar">
+          <span class="badge-pulse"><i class="fa-solid fa-bell"></i> CÓ ĐƠN ĐẶT MỚI!</span>
+          <span class="timer-countdown" id="offerTimer">30s</span>
+        </div>
+
+        <h3 id="offerTripTitle">Chuyến đi #TRIP-101</h3>
+
+        <div class="offer-route-box">
+          <div class="route-item">
+            <span class="point-icon green"><i class="fa-solid fa-location-dot"></i></span>
+            <div class="route-desc">
+              <span class="tag">ĐIỂM ĐÓN:</span>
+              <strong id="offerPickupAddress">Keangnam Landmark 72</strong>
+            </div>
+          </div>
+          <div class="route-item">
+            <span class="point-icon red"><i class="fa-solid fa-flag-checkered"></i></span>
+            <div class="route-desc">
+              <span class="tag">ĐIỂM TRẢ:</span>
+              <strong id="offerDropoffAddress">Hồ Hoàn Kiếm, Hà Nội</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="offer-meta-grid">
+          <div class="meta-card">
+            <span class="meta-label">CƯỚC PHÍ</span>
+            <span class="meta-val fare" id="offerFare">41.500 đ</span>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">KHOẢNG CÁCH</span>
+            <span class="meta-val" id="offerDistance">7.5 km</span>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">LOẠI XE</span>
+            <span class="meta-val" id="offerVehicle">BIKE</span>
+          </div>
+        </div>
+
+        <div class="offer-action-buttons">
+          <button class="btn btn-decline" onclick="rejectCurrentOffer()">
+            <i class="fa-solid fa-xmark"></i> TỪ CHỐI
+          </button>
+          <button class="btn btn-accept" onclick="acceptCurrentOffer()">
+            <i class="fa-solid fa-check"></i> NHẬN CHUYẾN
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- MODAL ĐĂNG NHẬP OTP TÀI XẾ -->
-    <div
-      id="loginModal"
-      style="
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        justify-content: center;
-        align-items: center;
-      "
-    >
-      <div
-        style="
-          background: #1e293b;
-          padding: 20px;
-          border-radius: 8px;
-          width: 300px;
-          border: 1px solid #334155;
-        "
-      >
-        <h3 style="color: #38bdf8; margin-top: 0">🔑 ĐĂNG NHẬP TÀI XẾ</h3>
+    <div id="loginModal" class="login-modal-overlay" style="display: none">
+      <div class="login-modal-box">
+        <h3><i class="fa-solid fa-key"></i> ĐĂNG NHẬP TÀI XẾ</h3>
 
         <div id="step1">
-          <label>Số điện thoại:</label>
+          <label>Số điện thoại tài xế:</label>
           <input
             type="text"
             id="phoneInput"
             placeholder="0987654321"
+            value="0987654321"
             style="width: 100%; margin: 5px 0 10px 0"
           />
           <button
@@ -100,11 +414,12 @@
         </div>
 
         <div id="step2" style="display: none">
-          <label>Nhập mã OTP:</label>
+          <label>Nhập mã OTP (6 số):</label>
           <input
             type="text"
             id="otpInput"
             placeholder="123456"
+            value="123456"
             style="width: 100%; margin: 5px 0 10px 0"
           />
           <button
@@ -126,6 +441,7 @@
       </div>
     </div>
 
+    <!-- MAIN APP SCRIPT -->
     <script src="app.js"></script>
   </body>
 </html>

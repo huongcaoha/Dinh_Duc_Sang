@@ -13,6 +13,8 @@ import ra.demo.constants.VehicleType;
 @AllArgsConstructor
 public class DriverLocationRequest {
 
+    private Long driverId;
+
     @NotNull(message = "Vĩ độ không được để trống")
     private Double latitude;
 

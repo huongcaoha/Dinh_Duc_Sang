@@ -26,11 +26,19 @@ public class LocationServiceImpl implements LocationService {
      */
     @Override
     public void updateDriverLocation(DriverLocationRequest request) {
-        // Lấy ID của tài xế đang thực hiện request (Trích xuất từ Token JWT)
-        Long driverId = SecurityUtils.getCurrentUserId();
+        // Lấy ID của tài xế: ưu tiên từ request (nếu do Kafka hoặc Service khác gọi), nếu không thì trích xuất từ Token JWT
+        Long driverId = request.getDriverId();
+        if (driverId == null) {
+            try {
+                driverId = SecurityUtils.getCurrentUserId();
+            } catch (Exception e) {
+                log.warn("[LOCATION UPDATE WARNING] Không tìm thấy driverId trong Request lẫn Security Context: {}", e.getMessage());
+                return;
+            }
+        }
 
         if (driverId == null) {
-            log.warn("[LOCATION UPDATE WARNING] Không tìm thấy driverId trong Security Context");
+            log.warn("[LOCATION UPDATE WARNING] Không tìm thấy driverId để cập nhật vị trí");
             return;
         }
 
@@ -38,18 +46,17 @@ public class LocationServiceImpl implements LocationService {
         VehicleType vehicleType = request.getVehicleType() != null ? request.getVehicleType() : VehicleType.BIKE;
 
         // BƯỚC 1: Lưu Lịch Sử Vị Trí Mới Nhất (Dạng Redis Hash: "driver:location:100")
-        // Giống như việc ghi nhật ký: Tài xế 100 đang ở Lat=..., Lng=..., Đi xe=BIKE
         String lastLocationKey = "driver:location:" + driverIdStr;
         redisTemplate.opsForHash().put(lastLocationKey, "lat", String.valueOf(request.getLatitude()));
         redisTemplate.opsForHash().put(lastLocationKey, "lng", String.valueOf(request.getLongitude()));
-        redisTemplate.opsForHash().put(lastLocationKey, "vehicleType", vehicleType.name()); // Thêm dòng này
+        redisTemplate.opsForHash().put(lastLocationKey, "vehicleType", vehicleType.name());
 
         // BƯỚC 2: Kiểm tra xem Tài xế này đang "ONLINE" hay "OFFLINE"
         String status = redisTemplate.opsForValue().get("driver:status:" + driverIdStr);
         String geoKey = "drivers:available:" + vehicleType.name();
 
-        // Nếu ĐANG ONLINE -> Cập nhật vị trí GPS vào Bản đồ Xe Rảnh (Redis GEO)
-        if ("ONLINE".equalsIgnoreCase(status)) {
+        // Nếu ĐANG ONLINE (hoặc tài xế đang stream GPS định kỳ mà chưa có status khác OFFLINE/BUSY) -> Cập nhật vị trí GPS vào Bản đồ Xe Rảnh (Redis GEO)
+        if (status == null || "ONLINE".equalsIgnoreCase(status)) {
             redisTemplate.opsForGeo().add(
                     geoKey,
                     new Point(request.getLongitude(), request.getLatitude()),
@@ -57,10 +64,10 @@ public class LocationServiceImpl implements LocationService {
             );
             log.debug("[LOCATION ONLINE] Cập nhật GPS Tài xế #{}: ({}, {})", driverId, request.getLatitude(), request.getLongitude());
         }
-        // Nếu ĐANG OFFLINE mà vẫn cố bắn GPS -> Xóa luôn khỏi Bản đồ Xe Rảnh
+        // Nếu ĐANG OFFLINE hoặc BUSY -> Xóa khỏi Bản đồ Xe Rảnh
         else {
             redisTemplate.opsForZSet().remove(geoKey, driverIdStr);
-            log.debug("[LOCATION OFFLINE] Tài xế #{} đang Offline. Xóa khỏi {}", driverId, geoKey);
+            log.debug("[LOCATION NOT_AVAILABLE] Tài xế #{} đang {}. Xóa khỏi {}", driverId, status, geoKey);
         }
     }
 

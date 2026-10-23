@@ -31,6 +31,7 @@ public class DriverLocationTelemetryListener {
 
         // Chuyển đổi DTO từ Kafka sang Request DTO của LocationService
         DriverLocationRequest request = DriverLocationRequest.builder()
+                .driverId(dto.getDriverId())
                 .latitude(dto.getLat())
                 .longitude(dto.getLng())
                 .vehicleType(dto.getVehicleType() != null ? VehicleType.valueOf(dto.getVehicleType()) : VehicleType.BIKE)
