@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bản Đồ Đặt Xe & Tracking Real-time</title>
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="section-box">
+        <h2>🚕 ĐỊNH VỊ GPS TÀI XẾ</h2>
+        <div class="form-group">
+          <label>Tọa độ chọn trên Map:</label>
+          <input
+            type="text"
+            id="selectedCoords"
+            value="21.03780, 105.78390"
+            readonly
+          />
+        </div>
+        <button class="btn btn-location" onclick="sendDriverLocation()">
+          📡 CẬP NHẬT TỌA ĐỘ TÀI XẾ
+        </button>
+      </div>
+
+      <label>📡 Nhật ký hệ thống (Logs):</label>
+      <div id="logs" class="log-box"></div>
+    </div>
+
+    <!-- KHUNG BẢN ĐỒ -->
+    <div id="map">
+      <!-- NÚT NGUỒN BẬT TẮT ONLINE ĐẶT BÊN PHẢI BẢN ĐỒ -->
+      <div class="driver-status-toggle-wrapper">
+        <span id="statusText" class="status-label-text" style="color: #94a3b8"
+          >🔴 OFFLINE</span
+        >
+        <label class="power-switch">
+          <input
+            type="checkbox"
+            id="driverStatusToggle"
+            onchange="onTogglePowerSwitch(this)"
+          />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- MODAL ĐĂNG NHẬP OTP TÀI XẾ -->
+    <div
+      id="loginModal"
+      style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+      "
+    >
+      <div
+        style="
+          background: #1e293b;
+          padding: 20px;
+          border-radius: 8px;
+          width: 300px;
+          border: 1px solid #334155;
+        "
+      >
+        <h3 style="color: #38bdf8; margin-top: 0">🔑 ĐĂNG NHẬP TÀI XẾ</h3>
+
+        <div id="step1">
+          <label>Số điện thoại:</label>
+          <input
+            type="text"
+            id="phoneInput"
+            placeholder="0987654321"
+            style="width: 100%; margin: 5px 0 10px 0"
+          />
+          <button
+            class="btn"
+            style="background: #3b82f6; color: white"
+            onclick="requestOtp()"
+          >
+            1. LẤY MÃ OTP
+          </button>
+        </div>
+
+        <div id="step2" style="display: none">
+          <label>Nhập mã OTP:</label>
+          <input
+            type="text"
+            id="otpInput"
+            placeholder="123456"
+            style="width: 100%; margin: 5px 0 10px 0"
+          />
+          <button
+            class="btn"
+            style="background: #22c55e; color: white"
+            onclick="submitLoginDriver()"
+          >
+            2. XÁC NHẬN & BẬT ONLINE
+          </button>
+        </div>
+
+        <button
+          class="btn"
+          style="background: #64748b; color: white; margin-top: 10px"
+          onclick="closeLoginModal()"
+        >
+          HỦY
+        </button>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
